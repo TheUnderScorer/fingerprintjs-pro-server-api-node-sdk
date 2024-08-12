@@ -8,12 +8,21 @@ export interface paths {
     /**
      * Get event by request ID
      * @description Get a detailed analysis of an individual identification event, including Smart Signals.
-     * **Only for Enterprise customers:** Please note that the response includes mobile signals (e.g. `rootApps`) even if the request originated from a non-mobile platform.
+     * Please note that the response includes mobile signals (e.g. `rootApps`) even if the request originated from a non-mobile platform.
      * It is highly recommended that you **ignore** the mobile signals for such requests.
      *
      * Use `requestId` as the URL path parameter. This API method is scoped to a request, i.e. all returned information is by `requestId`.
      */
     get: operations['getEvent']
+    /**
+     * Update an event with a given request ID
+     * @description Change information in existing events specified by `requestId` or *flag suspicious events*.
+     *
+     * When an event is created, it is assigned `linkedId` and `tag` submitted through the JS agent parameters. This information might not be available on the client so the Server API allows for updating the attributes after the fact.
+     *
+     * **Warning** It's not possible to update events older than 10 days.
+     */
+    put: operations['updateEvent']
   }
   '/visitors/{visitor_id}': {
     /**
@@ -26,17 +35,6 @@ export interface paths {
      * * `Retry-After` — Present in case of `429 Too many requests`. Indicates how long you should wait before making a follow-up request. The value is non-negative decimal integer indicating the seconds to delay after the response is received.
      */
     get: operations['getVisits']
-    /**
-     * Delete data by visitor ID
-     * @description Request deleting all data associated with the specified visitor ID. This API is useful for compliance with privacy regulations.
-     * All delete requests are queued:
-     *
-     * * Recent data (10 days or newer) belonging to the specified visitor will be deleted within 24 hours.
-     * * Data from older (11 days or more) identification events  will be deleted after 90 days.
-     *
-     * If you are interested in using this API, please [contact our support team](https://fingerprint.com/support/) to activate it for you. Otherwise, you will receive a 403.
-     */
-    delete: operations['deleteVisitorData']
   }
   '/webhook': {
     /** @description Fake path to describe webhook format. More information about webhooks can be found in the [documentation](https://dev.fingerprint.com/docs/webhooks) */
@@ -205,8 +203,8 @@ export interface components {
        */
       error: string
     }
-    ErrorVisitsDelete404Response: {
-      /** ErrorVisitsDelete404ResponseError */
+    ErrorVisitor404Response: {
+      /** ErrorVisitor404ResponseError */
       error?: {
         /**
          * @description Error code: * `VisitorNotFound` - The specified visitor ID was not found. It never existed or it may have already been deleted.
@@ -219,7 +217,7 @@ export interface components {
         message: string
       }
     }
-    ErrorVisitsDelete400Response: {
+    ErrorVisitor400Response: {
       error?: {
         /**
          * @description Error code: * `RequestCannotBeParsed` - The visitor ID parameter is missing or in the wrong format.
@@ -260,6 +258,9 @@ export interface components {
       highActivity?: components['schemas']['HighActivityResult']
       locationSpoofing?: components['schemas']['LocationSpoofingResult']
       suspectScore?: components['schemas']['SuspectScoreResult']
+      remoteControl?: components['schemas']['RemoteControlResult']
+      velocity?: components['schemas']['VelocityResult']
+      developerTools?: components['schemas']['DeveloperToolsResult']
       /**
        * @description Unique identifier of the user's identification request.
        * @example 1654815516083.OX6kx8
@@ -313,7 +314,7 @@ export interface components {
        */
       url: string
       /** @description A customer-provided value or an object that was sent with identification request. */
-      tag: {
+      tag?: {
         [key: string]: unknown
       }
       /**
@@ -384,7 +385,7 @@ export interface components {
        */
       url: string
       /** @description A customer-provided value or an object that was sent with identification request. */
-      tag: {
+      tag?: {
         [key: string]: unknown
       }
       /**
@@ -691,6 +692,21 @@ export interface components {
         data?: components['schemas']['RawDeviceAttributesResult']
         error?: components['schemas']['IdentificationError']
       }
+      /** SignalResponseRemoteControl */
+      remoteControl?: {
+        data?: components['schemas']['RemoteControlResult']
+        error?: components['schemas']['ProductError']
+      }
+      /** SignalResponseVelocity */
+      velocity?: {
+        data?: components['schemas']['VelocityResult']
+        error?: components['schemas']['ProductError']
+      }
+      /** SignalResponseDeveloperTools */
+      developerTools?: {
+        data?: components['schemas']['DeveloperToolsResult']
+        error?: components['schemas']['ProductError']
+      }
     }
     /** @description Contains results from all activated products - Fingerprint Pro, Bot Detection, and others. */
     EventResponse: {
@@ -875,6 +891,17 @@ export interface components {
       result: number
     }
     /**
+     * @description Sums key data points for a specific `visitorId` at three distinct time intervals: 5 minutes, 1 hour, and 24 hours as follows:
+     * - Number of identification events attributed to the visitor ID - Number of distinct IP addresses associated to the visitor ID. - Number of distinct countries associated with the visitor ID. - Number of distinct `linkedId`s associated with the visitor ID.
+     * The `24h` interval of `distinctIp`, `distinctLinkedId`, and `distinctCountry` will be omitted if the number of `events` for the visitor ID in the last 24 hours (`events.intervals.['24h']`) is higher than 20.000.
+     */
+    VelocityResult: {
+      distinctIp: components['schemas']['VelocityIntervals']
+      distinctLinkedId: components['schemas']['VelocityIntervals']
+      distinctCountry: components['schemas']['VelocityIntervals']
+      events: components['schemas']['VelocityIntervals']
+    }
+    /**
      * @description It includes 35+ raw browser identification attributes to provide Fingerprint users with even more information than our standard visitor ID provides. This enables Fingerprint users to not have to run our open-source product in conjunction with Fingerprint Pro Plus and Enterprise to get those additional attributes.
      * Warning: The raw signals data can change at any moment as we improve the product. We cannot guarantee the internal shape of raw device attributes to be stable, so typical semantic versioning rules do not apply here. Use this data with caution without assuming a specific structure beyond the generic type provided here.
      */
@@ -893,16 +920,19 @@ export interface components {
     }
     FactoryResetResult: {
       /**
-       * Time
        * Format: date-time
-       * @description Time in UTC when the most recent factory reset of the Android or iOS device was done.  If there is no sign of factory reset or the client is not a mobile device, the field will contain the epoch time (1 January 1970) in UTC.
+       * @description Indicates the time (in UTC) of the most recent factory reset that happened on the **mobile device**.
+       * When a factory reset cannot be detected on the mobile device or when the request is initiated from a browser, this field will correspond to the *epoch* time (i.e 1 Jan 1970 UTC).
+       * See [Factory Reset Detection](https://dev.fingerprint.com/docs/smart-signals-overview#factory-reset-detection) to learn more about this Smart Signal.
        *
        * @example 2022-06-09T22:58:36Z
        */
       time: string
       /**
        * Format: int64
-       * @description Same value as it's in the `time` field but represented in timestamp format.
+       * @description This field is just another representation of the value in the `time` field.
+       * The time of the most recent factory reset that happened on the **mobile device** is expressed as Unix epoch time.
+       *
        * @example 1654815517198
        */
       timestamp: number
@@ -1000,6 +1030,78 @@ export interface components {
       /** @example too many requests */
       message: string
     }
+    RemoteControlResult: {
+      /**
+       * @description `true` if the request came from a machine being remotely controlled (e.g. TeamViewer), `false` otherwise.
+       *
+       * @example false
+       */
+      result: boolean
+    }
+    DeveloperToolsResult: {
+      /**
+       * @description `true` if the browser is Chrome with DevTools open or Firefox with Developer Tools open, `false` otherwise.
+       *
+       * @example false
+       */
+      result: boolean
+    }
+    EventUpdateRequest: {
+      /** @description LinkedID value to assign to the existing event */
+      linkedId?: string
+      /** @description Full `tag` value to be set to the existing event. Replaces any existing `tag` payload completely. */
+      tag?: Record<string, never>
+      /** @description Suspect flag indicating observed suspicious or fraudulent event */
+      suspect?: boolean
+    }
+    ErrorUpdateEvent400Response: {
+      /** ErrorUpdateEvent400ResponseError */
+      error?: {
+        /**
+         * @description Error code: * `RequestCannotBeParsed` - the JSON content of the request contains some errors that prevented us from parsing it (wrong type/surpassed limits) * `Failed` - the event is more than 10 days old and cannot be updated
+         *
+         * @example RequestCannotBeParsed
+         * @enum {string}
+         */
+        code: 'RequestCannotBeParsed' | 'Failed'
+        /**
+         * @description Details about the underlying issue with the input payload
+         * @example suspect flag must be a boolean
+         */
+        message: string
+      }
+    }
+    ErrorUpdateEvent409Response: {
+      /** ErrorUpdateEvent409ResponseError */
+      error?: {
+        /**
+         * @description Error code: * `StateNotReady` - The event specified with request id is not ready for updates yet. Try again.
+         * This error happens in rare cases when update API is called immediately after receiving the request id on the client. In case you need to send information right away, we recommend using the JS agent API instead.
+         *
+         * @example StateNotReady
+         * @enum {string}
+         */
+        code: 'StateNotReady'
+        /** @example resource is not mutable yet, try again */
+        message: string
+      }
+    }
+    VelocityIntervals: {
+      intervals?: components['schemas']['VelocityIntervalResult']
+    }
+    /** @description Is absent if the velocity data could not be generated for the visitor ID. */
+    VelocityIntervalResult: {
+      /** @example 1 */
+      '5m': number
+      /** @example 1 */
+      '1h': number
+      /**
+       * @description The `24h` interval of `distinctIp`, `distinctLinkedId`, and `distinctCountry` will be omitted if the number of `events`` for the visitor ID in the last 24 hours (`events.intervals.['24h']`) is higher than 20.000.
+       *
+       * @example 1
+       */
+      '24h'?: number
+    }
   }
   responses: never
   parameters: never
@@ -1016,7 +1118,7 @@ export interface operations {
   /**
    * Get event by request ID
    * @description Get a detailed analysis of an individual identification event, including Smart Signals.
-   * **Only for Enterprise customers:** Please note that the response includes mobile signals (e.g. `rootApps`) even if the request originated from a non-mobile platform.
+   * Please note that the response includes mobile signals (e.g. `rootApps`) even if the request originated from a non-mobile platform.
    * It is highly recommended that you **ignore** the mobile signals for such requests.
    *
    * Use `requestId` as the URL path parameter. This API method is scoped to a request, i.e. all returned information is by `requestId`.
@@ -1045,6 +1147,57 @@ export interface operations {
       404: {
         content: {
           'application/json': components['schemas']['ErrorEvent404Response']
+        }
+      }
+    }
+  }
+  /**
+   * Update an event with a given request ID
+   * @description Change information in existing events specified by `requestId` or *flag suspicious events*.
+   *
+   * When an event is created, it is assigned `linkedId` and `tag` submitted through the JS agent parameters. This information might not be available on the client so the Server API allows for updating the attributes after the fact.
+   *
+   * **Warning** It's not possible to update events older than 10 days.
+   */
+  updateEvent: {
+    parameters: {
+      path: {
+        /** @description The unique event [identifier](https://dev.fingerprint.com/docs/js-agent#requestid). */
+        request_id: string
+      }
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['EventUpdateRequest']
+      }
+    }
+    responses: {
+      /** @description OK */
+      200: {
+        content: never
+      }
+      /** @description Bad request */
+      400: {
+        content: {
+          'application/json': components['schemas']['ErrorUpdateEvent400Response']
+        }
+      }
+      /** @description Forbidden */
+      403: {
+        content: {
+          'application/json': components['schemas']['ErrorCommon403Response']
+        }
+      }
+      /** @description Not found */
+      404: {
+        content: {
+          'application/json': components['schemas']['ErrorEvent404Response']
+        }
+      }
+      /** @description Conflict */
+      409: {
+        content: {
+          'application/json': components['schemas']['ErrorUpdateEvent409Response']
         }
       }
     }
@@ -1123,54 +1276,6 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['TooManyRequestsResponse']
-        }
-      }
-    }
-  }
-  /**
-   * Delete data by visitor ID
-   * @description Request deleting all data associated with the specified visitor ID. This API is useful for compliance with privacy regulations.
-   * All delete requests are queued:
-   *
-   * * Recent data (10 days or newer) belonging to the specified visitor will be deleted within 24 hours.
-   * * Data from older (11 days or more) identification events  will be deleted after 90 days.
-   *
-   * If you are interested in using this API, please [contact our support team](https://fingerprint.com/support/) to activate it for you. Otherwise, you will receive a 403.
-   */
-  deleteVisitorData: {
-    parameters: {
-      path: {
-        /** @description The [visitor ID](https://dev.fingerprint.com/docs/js-agent#visitorid) you want to delete. */
-        visitor_id: string
-      }
-    }
-    responses: {
-      /** @description OK. The visitor ID is scheduled for deletion. */
-      200: {
-        content: never
-      }
-      /** @description Bad request. The visitor ID parameter is missing or in the wrong format. */
-      400: {
-        content: {
-          'application/json': components['schemas']['ErrorVisitsDelete400Response']
-        }
-      }
-      /** @description Forbidden. Access to this API is denied. */
-      403: {
-        content: {
-          'application/json': components['schemas']['ErrorCommon403Response']
-        }
-      }
-      /** @description Not found. The visitor ID cannot be found in this application's data. */
-      404: {
-        content: {
-          'application/json': components['schemas']['ErrorVisitsDelete404Response']
-        }
-      }
-      /** @description Too Many Requests. The request is throttled. */
-      429: {
-        content: {
-          'application/json': components['schemas']['ErrorCommon429Response']
         }
       }
     }
