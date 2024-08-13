@@ -7,7 +7,7 @@ permissions:
 jobs:
   sync:
     name: 'Sync schema'
-    uses: fingerprintjs/dx-team-toolkit/.github/workflows/update-server-side-sdk-schema.yml@v1
+    uses: fingerprintjs/dx-team-toolkit/.github/workflows/update-server-side-sdk-schema.yml@bugfix/action-path
     with:
       tag: v1.1.0
       language: node
