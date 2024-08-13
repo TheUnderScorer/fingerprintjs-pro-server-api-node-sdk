@@ -1,0 +1,24 @@
+name: Sync schema
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag'
+        required: true
+        type: string
+permissions:
+  pull-requests: write
+  contents: write
+jobs:
+  sync:
+    name: 'Sync schema'
+    uses: fingerprintjs/dx-team-toolkit/.github/workflows/update-server-side-sdk-schema.yml@v1
+    with:
+      tag: ${{ github.event.inputs.tag }}
+      language: node
+      language-version: 21
+      generate-command: 'pnpm generateTypes'
+      schema-path: resources/fingerprint-server-api.yaml
+      examples-path: tests/mocked-responses-tests/mocked-responses-data
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
