@@ -1,11 +1,6 @@
 name: Sync schema
 on:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag'
-        required: true
-        type: string
 permissions:
   pull-requests: write
   contents: write
@@ -14,7 +9,7 @@ jobs:
     name: 'Sync schema'
     uses: fingerprintjs/dx-team-toolkit/.github/workflows/update-server-side-sdk-schema.yml@v1
     with:
-      tag: ${{ github.event.inputs.tag }}
+      tag: v1.1.0
       language: node
       language-version: 21
       generate-command: 'pnpm generateTypes'
