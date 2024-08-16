@@ -1,5 +1,11 @@
 ## [5.0.0](https://github.com/fingerprintjs/fingerprintjs-pro-server-api-node-sdk/compare/v4.1.2...v5.0.0) (2024-08-12)
 
+## 5.1.1
+
+### Patch Changes
+
+- b12fa00: Remove @changesets/cli
+
 ## 5.1.0
 
 ### Minor Changes
