@@ -1,5 +1,12 @@
 # fingerprintjs-pro-server-api-node-sdk-example
 
+## 1.0.1-test.2
+
+### Patch Changes
+
+- Updated dependencies [f18c9e0]
+  - @fingerprintjs/fingerprintjs-pro-server-api@5.1.0-test.2
+
 ## 1.0.1-test.1
 
 ### Patch Changes
